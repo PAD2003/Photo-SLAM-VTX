@@ -10,6 +10,16 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CUDA_STANDARD 17)
 
+##################################################################################
+##  Set up
+##################################################################################
+
+set(Torch_DIR /libtorch/share/cmake/Torch)
+
+find_package(GLEW REQUIRED)
+
+##################################################################################
+
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations")
 
 set(CAFFE2_USE_CUDNN on)
@@ -25,7 +35,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS} -pthread")
 
 find_package(CUDA REQUIRED)
 find_package(Eigen3 REQUIRED)
-find_package(OpenCV 4 REQUIRED)
+find_package(OpenCV 4.8.0 REQUIRED)
 find_package(jsoncpp REQUIRED)
 
 find_package(OpenGL REQUIRED)
@@ -191,53 +201,68 @@ target_link_libraries(view_result
 ##  Build the mapping examples to ${PROJECT_SOURCE_DIR}/bin
 ##################################################################################
 
-# Replica Monocular
-add_executable(replica_mono examples/replica_mono.cpp)
-target_link_libraries(replica_mono
-    gaussian_viewer    
-    gaussian_mapper
-    ${ORB_SLAM3_SOURCE_DIR}/lib/libORB_SLAM3.so)
+# # Replica Monocular
+# add_executable(replica_mono examples/replica_mono.cpp)
+# target_link_libraries(replica_mono
+#     gaussian_viewer    
+#     gaussian_mapper
+#     ${ORB_SLAM3_SOURCE_DIR}/lib/libORB_SLAM3.so)
 
-# Replica Monocular
-add_executable(replica_rgbd examples/replica_rgbd.cpp)
-target_link_libraries(replica_rgbd
-    gaussian_viewer    
-    gaussian_mapper
-    ${ORB_SLAM3_SOURCE_DIR}/lib/libORB_SLAM3.so)
+# # Replica Monocular
+# add_executable(replica_rgbd examples/replica_rgbd.cpp)
+# target_link_libraries(replica_rgbd
+#     gaussian_viewer    
+#     gaussian_mapper
+#     ${ORB_SLAM3_SOURCE_DIR}/lib/libORB_SLAM3.so)
 
-# TUM Monocular
-add_executable(tum_mono examples/tum_mono.cpp)
-target_link_libraries(tum_mono
-    gaussian_viewer    
-    gaussian_mapper
-    ${ORB_SLAM3_SOURCE_DIR}/lib/libORB_SLAM3.so)
+# # TUM Monocular
+# add_executable(tum_mono examples/tum_mono.cpp)
+# target_link_libraries(tum_mono
+#     gaussian_viewer    
+#     gaussian_mapper
+#     ${ORB_SLAM3_SOURCE_DIR}/lib/libORB_SLAM3.so)
 
-# TUM RGBD
-add_executable(tum_rgbd examples/tum_rgbd.cpp)
-target_link_libraries(tum_rgbd
-    gaussian_viewer    
-    gaussian_mapper
-    ${ORB_SLAM3_SOURCE_DIR}/lib/libORB_SLAM3.so)
+# # TUM RGBD
+# add_executable(tum_rgbd examples/tum_rgbd.cpp)
+# target_link_libraries(tum_rgbd
+#     gaussian_viewer    
+#     gaussian_mapper
+#     ${ORB_SLAM3_SOURCE_DIR}/lib/libORB_SLAM3.so)
 
-# EuRoC Stereo
-add_executable(euroc_stereo examples/euroc_stereo.cpp)
-target_link_libraries(euroc_stereo
-    gaussian_viewer    
-    gaussian_mapper
-    ${ORB_SLAM3_SOURCE_DIR}/lib/libORB_SLAM3.so)
+# # EuRoC Stereo
+# add_executable(euroc_stereo examples/euroc_stereo.cpp)
+# target_link_libraries(euroc_stereo
+#     gaussian_viewer    
+#     gaussian_mapper
+#     ${ORB_SLAM3_SOURCE_DIR}/lib/libORB_SLAM3.so)
+
+# # Intel Realsense
+# if(realsense2_FOUND)
+#     add_executable(realsense_rgbd examples/realsense_rgbd.cpp)
+#     target_include_directories(realsense_rgbd PUBLIC
+#         ${realsense_INCLUDE_DIR})
+#     target_link_libraries(realsense_rgbd
+#         gaussian_viewer    
+#         gaussian_mapper
+#         ${ORB_SLAM3_SOURCE_DIR}/lib/libORB_SLAM3.so
+#         ${realsense2_LIBRARY})
+# endif()
+
 
 ##################################################################################
 ##  Build the mapping examples to ${PROJECT_SOURCE_DIR}/bin
 ##################################################################################
 
-# Intel Realsense
-if(realsense2_FOUND)
-    add_executable(realsense_rgbd examples/realsense_rgbd.cpp)
-    target_include_directories(realsense_rgbd PUBLIC
-        ${realsense_INCLUDE_DIR})
-    target_link_libraries(realsense_rgbd
-        gaussian_viewer    
-        gaussian_mapper
-        ${ORB_SLAM3_SOURCE_DIR}/lib/libORB_SLAM3.so
-        ${realsense2_LIBRARY})
-endif()
+# TUM RGBD - MASKED - ONLY SLAM
+add_executable(tum_rgbd_masked_onlyslam examples/tum_rgbd_masked_onlyslam.cpp)
+target_link_libraries(tum_rgbd_masked_onlyslam
+    gaussian_viewer    
+    gaussian_mapper
+    ${ORB_SLAM3_SOURCE_DIR}/lib/libORB_SLAM3.so)
+
+# TUM RGBD - MASKED
+add_executable(tum_rgbd_masked examples/tum_rgbd_masked.cpp)
+target_link_libraries(tum_rgbd_masked
+    gaussian_viewer    
+    gaussian_mapper
+    ${ORB_SLAM3_SOURCE_DIR}/lib/libORB_SLAM3.so)
