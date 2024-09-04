@@ -343,7 +343,7 @@ std::cout<<111<<std::endl;
 
     rs2::frameset fs;
 
-   while (!pSLAM->isShutDown())
+    while (!pSLAM->isShutDown())
     {
         {
             std::unique_lock<std::mutex> lk(imu_mutex);
