@@ -429,6 +429,7 @@ public:
     // RGB Image
     // -- Useless in ORB-SLAM3 but useful in Gaussian Mapping
     cv::Mat imgLeftRGB, imgAuxiliary;
+    cv::Mat mask;
 
     // The following variables need to be accessed trough a mutex to be thread safe.
 protected:

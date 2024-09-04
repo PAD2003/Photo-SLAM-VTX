@@ -377,6 +377,8 @@ void GaussianMapper::run()
             pSLAM_->getAtlas()->clearMappingOperation();
 
             // Get initial sparse map
+            std::cout << "1" << std::endl;
+
             auto pMap = pSLAM_->getAtlas()->GetCurrentMap();
             std::vector<ORB_SLAM3::KeyFrame*> vpKFs;
             std::vector<ORB_SLAM3::MapPoint*> vpMPs;
@@ -405,7 +407,7 @@ void GaussianMapper::run()
                     new_kf->setPose(
                         pose.unit_quaternion().cast<double>(),
                         pose.translation().cast<double>());
-                    cv::Mat imgRGB_undistorted, imgAux_undistorted;
+                    cv::Mat imgRGB_undistorted, imgAux_undistorted, mask_undistorted;
                     try {
                         // Camera
                         Camera& camera = scene_->cameras_.at(pKF->mpCamera->GetId());
@@ -423,6 +425,13 @@ void GaussianMapper::run()
                             camera.undistortImage(imgAux, imgAux_undistorted);
                         else
                             imgAux_undistorted = imgAux;
+                        // Mask Image
+                        cv::Mat mask = pKF->mask; // only implement for RGBD
+                        if (this->sensor_type_ == RGBD)
+                            camera.undistortImage(mask, mask_undistorted);
+
+                        // For new loss
+                        new_kf->mask_ = tensor_utils::cvMat2TorchTensor_Float32(mask_undistorted, device_type_);
 
                         new_kf->original_image_ =
                             tensor_utils::cvMat2TorchTensor_Float32(imgRGB_undistorted, device_type_);
@@ -446,38 +455,58 @@ void GaussianMapper::run()
                     new_kf->kps_pixel_ = std::move(pixels);
                     new_kf->kps_point_local_ = std::move(pointsLocal);
                     new_kf->img_undist_ = imgRGB_undistorted;
+                    new_kf->mask_undist_ = mask_undistorted;
                     new_kf->img_auxiliary_undist_ = imgAux_undistorted;
                 }
             }
 
             // Prepare multi resolution images for training
+            std::cout << "2" << std::endl;
+
             for (auto& kfit : scene_->keyframes()) {
                 auto pkf = kfit.second;
                 if (device_type_ == torch::kCUDA) {
-                    cv::cuda::GpuMat img_gpu;
+                    cv::cuda::GpuMat img_gpu, mask_gpu;
                     img_gpu.upload(pkf->img_undist_);
+                    mask_gpu.upload(pkf->mask_undist_);
                     pkf->gaus_pyramid_original_image_.resize(num_gaus_pyramid_sub_levels_);
+                    pkf->gaus_pyramid_mask_.resize(num_gaus_pyramid_sub_levels_);
                     for (int l = 0; l < num_gaus_pyramid_sub_levels_; ++l) {
-                        cv::cuda::GpuMat img_resized;
+                        cv::cuda::GpuMat img_resized, mask_resized;
+
                         cv::cuda::resize(img_gpu, img_resized,
                                         cv::Size(pkf->gaus_pyramid_width_[l], pkf->gaus_pyramid_height_[l]));
                         pkf->gaus_pyramid_original_image_[l] =
                             tensor_utils::cvGpuMat2TorchTensor_Float32(img_resized);
+
+                        cv::cuda::resize(mask_gpu, mask_resized,
+                                        cv::Size(pkf->gaus_pyramid_width_[l], pkf->gaus_pyramid_height_[l]));
+                        pkf->gaus_pyramid_mask_[l] =
+                            tensor_utils::cvGpuMat2TorchTensor_Float32(mask_resized);
                     }
                 }
                 else {
                     pkf->gaus_pyramid_original_image_.resize(num_gaus_pyramid_sub_levels_);
+                    pkf->gaus_pyramid_mask_.resize(num_gaus_pyramid_sub_levels_);
                     for (int l = 0; l < num_gaus_pyramid_sub_levels_; ++l) {
-                        cv::Mat img_resized;
+                        cv::Mat img_resized, mask_resized;
+
                         cv::resize(pkf->img_undist_, img_resized,
                                 cv::Size(pkf->gaus_pyramid_width_[l], pkf->gaus_pyramid_height_[l]));
                         pkf->gaus_pyramid_original_image_[l] =
                             tensor_utils::cvMat2TorchTensor_Float32(img_resized, device_type_);
+                        
+                        cv::resize(pkf->mask_undist_, mask_resized,
+                                cv::Size(pkf->gaus_pyramid_width_[l], pkf->gaus_pyramid_height_[l]));
+                        pkf->gaus_pyramid_mask_[l] =
+                            tensor_utils::cvMat2TorchTensor_Float32(mask_resized, device_type_);
                     }
                 }
             }
 
             // Prepare for training
+            std::cout << "3" << std::endl;
+
             {
                 std::unique_lock<std::mutex> lock_render(mutex_render_);
                 scene_->cameras_extent_ = std::get<1>(scene_->getNerfppNorm());
@@ -487,9 +516,11 @@ void GaussianMapper::run()
             }
 
             // Invoke training once
+            std::cout << "4" << std::endl;
             trainForOneIteration();
 
             // Finish initial mapping loop
+            std::cout << "5" << std::endl;
             initial_mapped_ = true;
             break;
         }
@@ -506,13 +537,17 @@ void GaussianMapper::run()
     int SLAM_stop_iter = 0;
     while (!isStopped()) {
         // Check conditions for incremental mapping
+        std::cout << "6" << std::endl;
+
         if (hasMetIncrementalMappingConditions()) {
-            combineMappingOperations();
+            combineMappingOperations(); // TODO: this line create segmentation fault
             if (cull_keyframes_)
                 cullKeyframes();
         }
 
         // Invoke training once
+        std::cout << "7" << std::endl;
+
         trainForOneIteration();
 
         if (pSLAM_->isShutDown()) {
@@ -520,11 +555,13 @@ void GaussianMapper::run()
             SLAM_ended_ = true;
         }
 
+        std::cout << "8" << std::endl;
         if (SLAM_ended_ || getIteration() >= opt_params_.iterations_)
             break;
     }
 
     // Third loop: Tail gaussian optimization
+    std::cout << "9" << std::endl;
     int densify_interval = densifyInterval();
     int n_delay_iters = densify_interval * 0.8;
     while (getIteration() - SLAM_stop_iter <= n_delay_iters || getIteration() % densify_interval <= n_delay_iters || isKeepingTraining()) {
@@ -534,10 +571,12 @@ void GaussianMapper::run()
     }
 
     // Save and clear
+    std::cout << "10" << std::endl;
     renderAndRecordAllKeyframes("_shutdown");
     savePly(result_dir_ / (std::to_string(getIteration()) + "_shutdown") / "ply");
     writeKeyframeUsedTimes(result_dir_ / "used_times", "final");
 
+    std::cout << "11" << std::endl;
     signalStop();
 }
 
@@ -548,25 +587,40 @@ void GaussianMapper::trainColmap()
         auto pkf = kfit.second;
         increaseKeyframeTimesOfUse(pkf, newKeyframeTimesOfUse());
         if (device_type_ == torch::kCUDA) {
-            cv::cuda::GpuMat img_gpu;
+            cv::cuda::GpuMat img_gpu, mask_gpu;
             img_gpu.upload(pkf->img_undist_);
+            mask_gpu.upload(pkf->mask_undist_);
             pkf->gaus_pyramid_original_image_.resize(num_gaus_pyramid_sub_levels_);
+            pkf->gaus_pyramid_mask_.resize(num_gaus_pyramid_sub_levels_);
             for (int l = 0; l < num_gaus_pyramid_sub_levels_; ++l) {
-                cv::cuda::GpuMat img_resized;
+                cv::cuda::GpuMat img_resized, mask_resized;
+
                 cv::cuda::resize(img_gpu, img_resized,
                                 cv::Size(pkf->gaus_pyramid_width_[l], pkf->gaus_pyramid_height_[l]));
                 pkf->gaus_pyramid_original_image_[l] =
                     tensor_utils::cvGpuMat2TorchTensor_Float32(img_resized);
+
+                cv::cuda::resize(mask_gpu, mask_resized,
+                                cv::Size(pkf->gaus_pyramid_width_[l], pkf->gaus_pyramid_height_[l]));
+                pkf->gaus_pyramid_mask_[l] =
+                    tensor_utils::cvGpuMat2TorchTensor_Float32(mask_resized);
             }
         }
         else {
             pkf->gaus_pyramid_original_image_.resize(num_gaus_pyramid_sub_levels_);
+            pkf->gaus_pyramid_mask_.resize(num_gaus_pyramid_sub_levels_);
             for (int l = 0; l < num_gaus_pyramid_sub_levels_; ++l) {
-                cv::Mat img_resized;
+                cv::Mat img_resized, mask_resized;
+
                 cv::resize(pkf->img_undist_, img_resized,
                         cv::Size(pkf->gaus_pyramid_width_[l], pkf->gaus_pyramid_height_[l]));
                 pkf->gaus_pyramid_original_image_[l] =
                     tensor_utils::cvMat2TorchTensor_Float32(img_resized, device_type_);
+                
+                cv::resize(pkf->mask_undist_, mask_resized,
+                        cv::Size(pkf->gaus_pyramid_width_[l], pkf->gaus_pyramid_height_[l]));
+                pkf->gaus_pyramid_mask_[l] =
+                    tensor_utils::cvMat2TorchTensor_Float32(mask_resized, device_type_);
             }
         }
     }
@@ -630,20 +684,26 @@ void GaussianMapper::trainForOneIteration()
 
     int training_level = num_gaus_pyramid_sub_levels_;
     int image_height, image_width;
-    torch::Tensor gt_image, mask;
+    torch::Tensor gt_image, undistort_mask, mask;
     if (isdoingGausPyramidTraining())
         training_level = viewpoint_cam->getCurrentGausPyramidLevel();
     if (training_level == num_gaus_pyramid_sub_levels_) {
         image_height = viewpoint_cam->image_height_;
         image_width = viewpoint_cam->image_width_;
         gt_image = viewpoint_cam->original_image_.cuda();
-        mask = undistort_mask_[viewpoint_cam->camera_id_];
+        undistort_mask = undistort_mask_[viewpoint_cam->camera_id_];
+
+        // for new loss
+        mask = viewpoint_cam->mask_;
     }
     else {
         image_height = viewpoint_cam->gaus_pyramid_height_[training_level];
         image_width = viewpoint_cam->gaus_pyramid_width_[training_level];
         gt_image = viewpoint_cam->gaus_pyramid_original_image_[training_level].cuda();
-        mask = scene_->cameras_.at(viewpoint_cam->camera_id_).gaus_pyramid_undistort_mask_[training_level];
+        undistort_mask = scene_->cameras_.at(viewpoint_cam->camera_id_).gaus_pyramid_undistort_mask_[training_level];
+
+        // TODO: for new loss
+        mask = viewpoint_cam->gaus_pyramid_mask_[training_level];
     }
 
     // Mutex lock for usage of the gaussian model
@@ -689,13 +749,20 @@ void GaussianMapper::trainForOneIteration()
     auto radii = std::get<3>(render_pkg);
 
     // Get rid of black edges caused by undistortion
-    torch::Tensor masked_image = rendered_image * mask;
+    torch::Tensor undistort_masked_image = rendered_image * undistort_mask;
 
-    // Loss
-    auto Ll1 = loss_utils::l1_loss(masked_image, gt_image);
+    // // Loss
+    // auto Ll1 = loss_utils::l1_loss(undistort_masked_image, gt_image);
+    // float lambda_dssim = lambdaDssim();
+    // auto loss = (1.0 - lambda_dssim) * Ll1
+    //             + lambda_dssim * (1.0 - loss_utils::ssim(undistort_masked_image, gt_image, device_type_));
+
+    // New loss
+    auto Ll1 = loss_utils::mask_l1_loss(undistort_masked_image, gt_image, mask);
     float lambda_dssim = lambdaDssim();
     auto loss = (1.0 - lambda_dssim) * Ll1
-                + lambda_dssim * (1.0 - loss_utils::ssim(masked_image, gt_image, device_type_));
+                + lambda_dssim * (1.0 - loss_utils::mask_ssim(undistort_masked_image, gt_image, mask, device_type_));
+
     loss.backward();
 
     torch::cuda::synchronize();
@@ -706,7 +773,7 @@ void GaussianMapper::trainForOneIteration()
 
         if (keyframe_record_interval_ &&
             getIteration() % keyframe_record_interval_ == 0)
-            recordKeyframeRendered(masked_image, gt_image, viewpoint_cam->fid_, result_dir_, result_dir_, result_dir_);
+            recordKeyframeRendered(undistort_masked_image, gt_image, viewpoint_cam->fid_, result_dir_, result_dir_, result_dir_);
 
         // Densification
         if (getIteration() < opt_params_.densify_until_iter_) {
@@ -1020,7 +1087,8 @@ void GaussianMapper::handleNewKeyframe(
                 cv::Mat/*auxiliaryImage*/,
                 std::vector<float>,
                 std::vector<float>,
-                std::string> &kf)
+                std::string,
+                cv::Mat/*mask*/> &kf)
 {
     std::shared_ptr<GaussianKeyframe> pkf =
         std::make_shared<GaussianKeyframe>(std::get<0>(kf), getIteration());
@@ -1031,7 +1099,7 @@ void GaussianMapper::handleNewKeyframe(
     pkf->setPose(
         pose.unit_quaternion().cast<double>(),
         pose.translation().cast<double>());
-    cv::Mat imgRGB_undistorted, imgAux_undistorted;
+    cv::Mat imgRGB_undistorted, imgAux_undistorted, mask_undistorted;
     try {
         // Camera
         Camera& camera = scene_->cameras_.at(std::get<1>(kf));
@@ -1049,6 +1117,13 @@ void GaussianMapper::handleNewKeyframe(
             camera.undistortImage(imgAux, imgAux_undistorted);
         else
             imgAux_undistorted = imgAux;
+        // Mask Image
+        cv::Mat mask = std::get<9>(kf); // only implement for RGBD
+        if (this->sensor_type_ == RGBD)
+            camera.undistortImage(mask, mask_undistorted);
+
+        // For new loss
+        pkf->mask_ = tensor_utils::cvMat2TorchTensor_Float32(mask_undistorted, device_type_);
 
         pkf->original_image_ =
             tensor_utils::cvMat2TorchTensor_Float32(imgRGB_undistorted, device_type_);
@@ -1069,6 +1144,7 @@ void GaussianMapper::handleNewKeyframe(
 
     // Get dense point cloud from the new keyframe to accelerate training
     pkf->img_undist_ = imgRGB_undistorted;
+    pkf->mask_undist_ = mask_undistorted;
     pkf->img_auxiliary_undist_ = imgAux_undistorted;
     pkf->kps_pixel_ = std::move(std::get<6>(kf));
     pkf->kps_point_local_ = std::move(std::get<7>(kf));
@@ -1077,25 +1153,40 @@ void GaussianMapper::handleNewKeyframe(
 
     // Prepare multi resolution images for training
     if (device_type_ == torch::kCUDA) {
-        cv::cuda::GpuMat img_gpu;
+        cv::cuda::GpuMat img_gpu, mask_gpu;
         img_gpu.upload(pkf->img_undist_);
+        mask_gpu.upload(pkf->mask_undist_);
         pkf->gaus_pyramid_original_image_.resize(num_gaus_pyramid_sub_levels_);
+        pkf->gaus_pyramid_mask_.resize(num_gaus_pyramid_sub_levels_);
         for (int l = 0; l < num_gaus_pyramid_sub_levels_; ++l) {
-            cv::cuda::GpuMat img_resized;
+            cv::cuda::GpuMat img_resized, mask_resized;
+
             cv::cuda::resize(img_gpu, img_resized,
                                 cv::Size(pkf->gaus_pyramid_width_[l], pkf->gaus_pyramid_height_[l]));
             pkf->gaus_pyramid_original_image_[l] =
                 tensor_utils::cvGpuMat2TorchTensor_Float32(img_resized);
+            
+            cv::cuda::resize(mask_gpu, mask_resized, 
+                                cv::Size(pkf->gaus_pyramid_width_[l], pkf->gaus_pyramid_height_[l]));
+            pkf->gaus_pyramid_mask_[l] = 
+                tensor_utils::cvGpuMat2TorchTensor_Float32(mask_resized);
         }
     }
     else {
         pkf->gaus_pyramid_original_image_.resize(num_gaus_pyramid_sub_levels_);
+        pkf->gaus_pyramid_mask_.resize(num_gaus_pyramid_sub_levels_);
         for (int l = 0; l < num_gaus_pyramid_sub_levels_; ++l) {
-            cv::Mat img_resized;
+            cv::Mat img_resized, mask_resized;
+
             cv::resize(pkf->img_undist_, img_resized,
                         cv::Size(pkf->gaus_pyramid_width_[l], pkf->gaus_pyramid_height_[l]));
             pkf->gaus_pyramid_original_image_[l] =
                 tensor_utils::cvMat2TorchTensor_Float32(img_resized, device_type_);
+
+            cv::resize(pkf->mask_undist_, mask_resized,
+                        cv::Size(pkf->gaus_pyramid_width_[l], pkf->gaus_pyramid_height_[l]));
+            pkf->gaus_pyramid_mask_[l] =
+                tensor_utils::cvMat2TorchTensor_Float32(mask_resized, device_type_);
         }
     }
 }

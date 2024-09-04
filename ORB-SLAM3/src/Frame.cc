@@ -93,6 +93,7 @@ Frame::Frame(const Frame &frame)
 
     imgLeftRGB = frame.imgLeftRGB;
     imgAuxiliary = frame.imgAuxiliary;
+    mask = frame.mask;
 
 #ifdef REGISTER_TIMES
     mTimeStereoMatch = frame.mTimeStereoMatch;
@@ -213,9 +214,10 @@ Frame::Frame(const cv::Mat &mask,const cv::Mat &imGray, const cv::Mat &imDepth, 
     // Frame ID
     mnId=nNextId++;
 
-    // Save RGB image for Gaussian Mapping
+    // Save RGB, depth, mask images for Gaussian Mapping
     this->imgLeftRGB = imRGB.clone();
     this->imgAuxiliary = imDepth.clone();
+    this->mask = mask.clone();
 
     // Scale Level Info
     mnScaleLevels = mpORBextractorLeft->GetLevels();
@@ -255,7 +257,7 @@ Frame::Frame(const cv::Mat &mask,const cv::Mat &imGray, const cv::Mat &imDepth, 
                 _mDescriptors.push_back(mDescriptors.row(i));
                 }
         }
-        std::cout<< "Erase featrues number ="<<  num << std::endl;
+        // std::cout<< "Erase featrues number ="<<  num << std::endl;
     }   
     mvKeys = _mvKeys;
     mDescriptors =_mDescriptors;

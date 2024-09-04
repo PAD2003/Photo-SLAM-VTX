@@ -354,6 +354,7 @@ public:
 
     cv::Mat imgLeft, imgRight;
     cv::Mat imgLeftRGB, imgAuxiliary;
+    cv::Mat mask;
 
     void PrintPointDistribution(){
         int left = 0, right = 0;

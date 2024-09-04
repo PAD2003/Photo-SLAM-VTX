@@ -30,6 +30,23 @@ inline torch::Tensor l1_loss(torch::Tensor &network_output, torch::Tensor &gt)
     return torch::abs(network_output - gt).mean();
 }
 
+inline torch::Tensor mask_l1_loss(torch::Tensor &network_output, torch::Tensor &gt, torch::Tensor &mask)
+{
+    // create inverted mask
+    auto inverted_mask = mask == 0;
+    auto selected_network_output = network_output.masked_select(inverted_mask);
+    auto selected_gt = gt.masked_select(inverted_mask);
+
+    // compute l1
+    if (selected_network_output.numel() == 0) {
+        // if mask = 1 -> loss = 0
+        return torch::tensor(0.0, network_output.options());
+    } else {
+        return torch::abs(selected_network_output - selected_gt).mean();
+    }
+}
+
+
 inline torch::Tensor psnr(torch::Tensor &img1, torch::Tensor &img2)
 {
     auto mse = torch::pow(img1 - img2, 2).mean();
@@ -121,6 +138,58 @@ inline torch::Tensor ssim(
     window = window.type_as(img1);
 
     return _ssim(img1, img2, window, window_size, channel, size_average);
+}
+
+inline torch::Tensor _ssim_for_mask(
+    torch::Tensor &img1,
+    torch::Tensor &img2,
+    torch::autograd::Variable &window,
+    int window_size,
+    int64_t channel,
+    bool size_average,
+    torch::Tensor &inverted_mask)
+{
+    int window_size_half = window_size / 2;
+    auto mu1 = torch::nn::functional::conv2d(img1, window, torch::nn::functional::Conv2dFuncOptions().padding(window_size_half).groups(channel));
+    auto mu2 = torch::nn::functional::conv2d(img2, window, torch::nn::functional::Conv2dFuncOptions().padding(window_size_half).groups(channel));
+
+    auto mu1_sq = mu1.pow(2);
+    auto mu2_sq = mu2.pow(2);
+    auto mu1_mu2 = mu1 * mu2;
+
+    auto sigma1_sq = torch::nn::functional::conv2d(img1 * img1, window, torch::nn::functional::Conv2dFuncOptions().padding(window_size_half).groups(channel)) - mu1_sq;
+    auto sigma2_sq = torch::nn::functional::conv2d(img2 * img2, window, torch::nn::functional::Conv2dFuncOptions().padding(window_size_half).groups(channel)) - mu2_sq;
+    auto sigma12 = torch::nn::functional::conv2d(img1 * img2, window, torch::nn::functional::Conv2dFuncOptions().padding(window_size_half).groups(channel)) - mu1_mu2;
+
+    auto C1 = 0.01 * 0.01;
+    auto C2 = 0.03 * 0.03;
+
+    auto ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2));
+    ssim_map *= inverted_mask;  // Apply mask
+
+    if (size_average)
+        return ssim_map.mean();
+    else
+        return ssim_map.mean({1, 2, 3});
+}
+
+
+inline torch::Tensor mask_ssim(
+    torch::Tensor &img1,
+    torch::Tensor &img2,
+    torch::Tensor &mask,
+    torch::DeviceType device_type = torch::kCUDA,
+    int window_size = 11,
+    bool size_average = true)
+{
+    auto inverted_mask = mask == 0;
+    auto channel = img1.size(-3);
+    auto window = create_window(window_size, channel, device_type);
+
+    // window = window.to(img1.device());
+    window = window.type_as(img1);
+
+    return _ssim_for_mask(img1, img2, window, window_size, channel, size_average, inverted_mask);
 }
 
 }

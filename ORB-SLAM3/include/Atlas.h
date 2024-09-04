@@ -116,7 +116,8 @@ public:
                 pKF->imgAuxiliary,
                 pixels,
                 pointsLocal,
-                pKF->mNameFile));
+                pKF->mNameFile,
+                pKF->mask.clone()));
     }
 
     std::vector<std::tuple<
@@ -128,7 +129,8 @@ public:
         cv::Mat,
         std::vector<float>,
         std::vector<float>,
-        std::string>>&
+        std::string,
+        cv::Mat>>&
     associatedKeyFrames() { return mvAssociatedKeyFrames; }
 
     void reserveMapPoints(const std::size_t nMPs)
@@ -176,7 +178,8 @@ protected:
         cv::Mat/*auxiliaryImage*/,
         std::vector<float>/*keypoints pixel*/,
         std::vector<float>/*keypoints local 3D*/,
-        std::string/*main image file name*/>> mvAssociatedKeyFrames;
+        std::string/*main image file name*/,
+        cv::Mat/*mask*/>> mvAssociatedKeyFrames;
 
     // Mutex
     mutable std::mutex mMutexMapPoints;

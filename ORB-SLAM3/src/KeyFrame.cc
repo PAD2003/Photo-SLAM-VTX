@@ -96,6 +96,7 @@ KeyFrame::KeyFrame(Frame &F, Map *pMap, KeyFrameDatabase *pKFDB):
 
     this->imgLeftRGB = F.imgLeftRGB;
     this->imgAuxiliary = F.imgAuxiliary;
+    this->mask = F.mask;
 }
 
 void KeyFrame::ComputeBoW()

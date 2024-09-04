@@ -91,7 +91,9 @@ public:
 
     std::string img_filename_;
     cv::Mat img_undist_, img_auxiliary_undist_;
+    cv::Mat mask_undist_;
     torch::Tensor original_image_; ///< image
+    torch::Tensor mask_;
     int image_width_;              ///< image
     int image_height_;             ///< image
 
@@ -100,6 +102,7 @@ public:
     std::vector<std::size_t> gaus_pyramid_width_;            ///< gaus_pyramid image
     std::vector<std::size_t> gaus_pyramid_height_;           ///< gaus_pyramid image
     std::vector<torch::Tensor> gaus_pyramid_original_image_; ///< gaus_pyramid image
+    std::vector<torch::Tensor> gaus_pyramid_mask_;           ///< gaus_pyramid mask
     // Tensor gt_alpha_mask_;
 
     std::vector<float> intr_; ///< intrinsics
