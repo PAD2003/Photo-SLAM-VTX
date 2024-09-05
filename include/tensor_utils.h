@@ -46,6 +46,16 @@ inline torch::Tensor cvMat2TorchTensor_Float32(
     {
     case 1:
     {
+        std::cout << "cvMat2TorchTensor_Float32 1" << std::endl;
+        std::cout << "Matrix type: " << mat.type() << " Channels: " << mat.channels() << std::endl;
+        std::cout << "Data pointer: " << mat.data << std::endl;
+        std::cout << "Rows: " << mat.rows << " Cols: " << mat.cols << std::endl;
+
+        if (mat.type() != CV_32F) {
+            mat.convertTo(mat, CV_32F);
+        }
+
+
         mat_tensor = torch::from_blob(mat.data, /*sizes=*/{mat.rows, mat.cols});
         tensor = mat_tensor.clone().to(device_type);
     }
@@ -53,8 +63,19 @@ inline torch::Tensor cvMat2TorchTensor_Float32(
 
     case 3:
     {
+        std::cout << "cvMat2TorchTensor_Float32 2" << std::endl;
+        std::cout << "Matrix type: " << mat.type() << " Channels: " << mat.channels() << std::endl;
+        std::cout << "Data pointer: " << mat.data << std::endl;
+        std::cout << "Rows: " << mat.rows << " Cols: " << mat.cols << std::endl;
+
+        if (mat.type() != CV_32F) {
+            mat.convertTo(mat, CV_32F);
+        }
+
         mat_tensor = torch::from_blob(mat.data, /*sizes=*/{mat.rows, mat.cols, mat.channels()});
+        std::cout << "cvMat2TorchTensor_Float32 2.1" << std::endl;
         tensor = mat_tensor.clone().to(device_type);
+        std::cout << "cvMat2TorchTensor_Float32 2.2" << std::endl;
         tensor = tensor.permute({2, 0, 1});
     }
     break;
@@ -63,6 +84,8 @@ inline torch::Tensor cvMat2TorchTensor_Float32(
         std::cerr << "The mat has unsupported number of channels!" << std::endl;
     break;
     }
+
+    std::cout << "cvMat2TorchTensor_Float32 3" << std::endl;
 
     return tensor.contiguous();
 }
